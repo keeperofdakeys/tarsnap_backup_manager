@@ -3,18 +3,19 @@
 from backup_entry import *
 from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
+from subprocess import Popen, PIPE
 
 class Bins():
     def __init__(self):
         self.bins = {}
 
     def append(self, key, entry):
-        if not self.bins.has_key(key):
+        if key not in self.bins:
             self.bins[key] = []
         self.bins[key].append(entry)
 
     def bin_size(self, key):
-        if not self.bins.has_key(key):
+        if key not in self.bins:
             return 0
         else:
             return len(self.bins[key])
@@ -41,22 +42,49 @@ class Bins():
     def print_em(self):
         for x in self.bins.values():
             for y in x:
-                print y.name
+                print (y.name)
         
+def call_tarsnap(backup_names):
+    program = "/usr/bin/tarsnap"
+    args = [program, "--list-archives"]
+    print ("Executing: " + ' '.join(args))
+    proc = Popen(args, executable=program, stdout=PIPE, universal_newlines=True)
 
-def main():
     getting_input = True
-    backups = []
-    to_remove = []
-    backup_names = []
     while getting_input:
         try:
-            line = raw_input()
+            line = proc.stdout.readline()[:-1]
+            if line == '':
+                raise EOFError()
+            print (line)
+            backup_names.append(line)
         except EOFError:
             getting_input = False
-        if line == '':
-            getting_input = False
-        backup_names.append(line)
+    if proc.poll() is None:
+        proc.kill()
+
+def call_tarsnap_remove(backups):
+    program = "/usr/bin/tarsnap"
+    args = [program, "-d"]
+    [args.extend(["-f", x.name]) for x in backups]
+    print ("Executing: " + " ".join(args))
+    
+    while True:
+        response = input("Continue (n)?")
+        if response.lower().startswith("n"):
+            print ("Giving up")
+            return
+        elif response.lower().startswith("y"):
+            break
+    proc = Popen(args, executable=program)
+    proc.wait()
+    print ("Finished")
+
+def main():
+    backup_names = []
+    call_tarsnap(backup_names);
+    backups = []
+    to_remove = []
     for backup_str in backup_names:
         try:
             backup = BackupEntry.parse_name(backup_str)
@@ -73,8 +101,9 @@ def main():
             ]
     bins = Bins()
     bins.bin_em(backups, to_remove, classifiers)
+    call_tarsnap_remove(to_remove)
     for x in to_remove:
-        print x.name 
+        print (x.name)
     #bins.print_em()
 
 if __name__ == "__main__":
